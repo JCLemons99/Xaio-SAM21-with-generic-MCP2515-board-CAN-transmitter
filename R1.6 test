@@ -1,0 +1,36 @@
+#include <SPI.h>
+
+// XIAO ESP32S3 actual SPI pins to try  
+#define SCK_PIN  8  
+#define MISO_PIN 9  
+#define MOSI_PIN 10  
+#define CS_PIN   7
+
+void setup() {  
+    Serial.begin(115200);  
+    unsigned long t = millis();  
+    while (!Serial && millis() - t < 3000) {}
+
+    pinMode(CS_PIN, OUTPUT);  
+    digitalWrite(CS_PIN, HIGH);
+
+    SPI.begin(SCK_PIN, MISO_PIN, MOSI_PIN, CS_PIN);  
+    SPI.setFrequency(500000); // Very slow: 500kHz
+
+    Serial.println("SPI initialized. Sending test byte...");
+
+    digitalWrite(CS_PIN, LOW);  
+    byte result = SPI.transfer(0x00); // Send dummy byte  
+    digitalWrite(CS_PIN, HIGH);
+
+    Serial.print("SPI Response byte: 0x");  
+    Serial.println(result, HEX);
+
+    if (result == 0xFF || result == 0x00) {  
+        Serial.println("WARNING: No response from MCP2515. Check wiring.");  
+    } else {  
+        Serial.println("SPI communication detected!");  
+    }  
+}
+
+void loop() {}  
