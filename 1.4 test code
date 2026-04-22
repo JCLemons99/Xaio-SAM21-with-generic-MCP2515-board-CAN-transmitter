@@ -1,0 +1,30 @@
+#include <mcp_can.h>  
+#include <SPI.h>
+
+// Try each of these one at a time:  
+const int SPI_CS_PIN = 7;   // Most likely correct for XIAO CAN board  
+// const int SPI_CS_PIN = 2;  
+// const int SPI_CS_PIN = 4;
+
+MCP_CAN CAN(SPI_CS_PIN);
+
+void setup()    
+    Serial.begin(115200);  
+    unsigned long t = millis();  
+    while (!Serial && millis() - t < 3000);
+
+    Serial.print("Trying CS pin: ");  
+    Serial.println(SPI_CS_PIN);
+
+    // XIAO ESP32S3 hardware SPI pins  
+    SPI.begin(8, 9, 10, SPI_CS_PIN);
+
+    if (CAN_OK == CAN.begin(MCP_ANY, CAN_500KBPS, MCP_8MHZ))    
+        CAN.setMode(MCP_NORMAL);  
+        Serial.println("SUCCESS! CAN init OK!");  
+      else    
+        Serial.println("FAILED. Try a different CS pin.");  
+       
+ 
+
+void loop()    
