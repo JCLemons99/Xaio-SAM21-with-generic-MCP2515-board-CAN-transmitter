@@ -1,0 +1,104 @@
+// -------------------------------------------------------  
+// XIAO SAMD21 + MCP2515  
+// OBD2 RPM Simulator  
+// Broadcasts ECU-style RPM response: 0 → 5000 RPM  
+// Step: +10 RPM/second | CAN ID: 0x7E8 | PID: 0x0C  
+// -------------------------------------------------------
+
+#include <SPI.h>  
+#include <mcp_can.h>
+
+// -------------------------------------------------------  
+// PIN & BUS CONFIGURATION  
+// -------------------------------------------------------  
+#define CAN_CS_PIN  7  
+#define CAN_SPEED   CAN_500KBPS
+
+// -------------------------------------------------------  
+// OBD2 RPM SIMULATOR  
+// -------------------------------------------------------  
+#define OBD2_ECU_RESPONSE_ID  0x7E8  
+#define RPM_MIN               0  
+#define RPM_MAX               5000  
+#define RPM_STEP              10
+
+float simulatedRPM          = 0;  
+unsigned long lastRPMTxTime = 0;  
+const unsigned long RPM_INTERVAL = 1000;
+
+MCP_CAN CAN(CAN_CS_PIN);
+
+// -------------------------------------------------------  
+// SETUP  
+// -------------------------------------------------------  
+void setup() {  
+  Serial.begin(9600);  
+  while (!Serial) { delay(10); }
+
+  Serial.println("===========================================");  
+  Serial.println(" OBD2 RPM Simulator");  
+  Serial.println(" XIAO SAMD21 + MCP2515");  
+  Serial.println(" Sweeping 0 to 5000 RPM @ +10 RPM/sec");  
+  Serial.println("===========================================");
+
+  Serial.print("Initializing MCP2515... ");
+
+  if (CAN.begin(MCP_ANY, CAN_SPEED, MCP_8MHZ) == CAN_OK) {  
+    Serial.println("SUCCESS");  
+  } else {  
+    Serial.println("FAILED — Try MCP_16MHZ");  
+    while (1) { delay(100); }  
+  }
+
+  CAN.setMode(MCP_NORMAL);  
+  Serial.println("MCP2515 ready.");  
+  Serial.println("-------------------------------------------");  
+}
+
+// -------------------------------------------------------  
+// MAIN LOOP  
+// -------------------------------------------------------  
+void loop() {  
+  unsigned long currentMillis = millis();
+
+  if (currentMillis - lastRPMTxTime >= RPM_INTERVAL) {  
+    lastRPMTxTime = currentMillis;
+
+    transmitRPM(simulatedRPM);
+
+    Serial.print("   [RPM TX] Simulated RPM: ");  
+    Serial.print((int)simulatedRPM);  
+    Serial.println(" RPM");
+
+    simulatedRPM += RPM_STEP;  
+    if (simulatedRPM > RPM_MAX) {  
+      simulatedRPM = RPM_MIN;  
+    }  
+  }  
+}
+
+// -------------------------------------------------------  
+// Transmit OBD2-Style RPM Response  
+// SAE J1979 Mode 01 PID 0x0C  
+// raw = RPM * 4  →  split into high/low byte  
+// -------------------------------------------------------  
+void transmitRPM(float rpm) {  
+  uint16_t raw      = (uint16_t)(rpm * 4.0);  
+  byte highByte     = (raw >> 8) & 0xFF;  
+  byte lowByte      =  raw & 0xFF;
+
+  byte txBuf[8] = {  
+    0x04,       // 4 bytes follow  
+    0x41,       // Mode 01 response  
+    0x0C,       // PID — Engine RPM  
+    highByte,  
+    lowByte,  
+    0x00, 0x00, 0x00  
+  };
+
+  byte result = CAN.sendMsgBuf(OBD2_ECU_RESPONSE_ID, 0, 8, txBuf);
+
+  if (result != CAN_OK) {  
+    Serial.println("ERROR: Failed to transmit RPM message");  
+  }  
+}  
