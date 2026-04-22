@@ -1,0 +1,42 @@
+#include <mcp_can.h>
+#include <SPI.h>
+
+const int SPI_CS_PIN = D1; 
+MCP_CAN CAN(SPI_CS_PIN);
+
+void setup() {
+    Serial.begin(115200);
+
+    // Initialize at 500kbps with the 8MHz crystal
+    while (CAN_OK != CAN.begin(CAN_500KBPS, MCP_8MHZ)) {
+        Serial.println("CAN BUS Shield init fail");
+        delay(100);
+    }
+    Serial.println("CAN BUS Shield init ok!");
+}
+
+void loop() {
+    // OBD2 Request for Engine RPM (PID 0x0C)
+    // Data: [Length=2, Mode=01, PID=0x0C, 0, 0, 0, 0, 0]
+    unsigned char stmp[8] = {0x02, 0x01, 0x0C, 0x00, 0x00, 0x00, 0x00, 0x00};
+    CAN.sendMsgBuf(0x7DF, 0, 8, stmp);
+
+    delay(100); 
+
+    unsigned long canId;
+    unsigned char len = 0;
+    unsigned char buf[8];
+
+    if (CAN_MSGAVAIL == CAN.checkReceive()) {
+        CAN.readMsgBuf(&canId, &len, buf);
+
+        // Response format: [Length, Mode+40, PID, Data_A, Data_B, ...]
+        // We check if buf[2] matches our PID (0x0C)
+        if (buf[2] == 0x0C) {
+            unsigned int rpm = ((unsigned int)buf[3] * 256 + buf[4]) / 4;
+            Serial.print("Engine RPM: ");
+            Serial.println(rpm);
+        }
+    }
+    delay(200); // RPM updates faster than speed, so we poll more often
+}
