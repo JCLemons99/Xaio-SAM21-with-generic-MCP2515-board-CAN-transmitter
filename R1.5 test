@@ -1,0 +1,78 @@
+#include <mcp_can.h>  
+#include <SPI.h>
+
+/*  
+ * XIAO ESP32S3 + XIAO CAN Expansion Board  
+ * SPI Pins (ESP32S3 default):  
+ *   SCK  = GPIO 8  
+ *   MISO = GPIO 9  
+ *   MOSI = GPIO 10  
+ *   CS   = GPIO 7 (most likely correct for XIAO CAN board)  
+ * Crystal: 8MHz  
+ */
+
+const int SPI_CS_PIN = 7; // Change to 2 or 4 if this doesn't work
+
+MCP_CAN CAN(SPI_CS_PIN);
+
+void setup() {  
+    Serial.begin(115200);
+
+    // Timeout so it doesn't block without USB  
+    unsigned long t = millis();  
+    while (!Serial && millis() - t < 3000) {}
+
+    // Explicitly initialize SPI with XIAO ESP32S3 pins  
+    SPI.begin(8, 9, 10, SPI_CS_PIN); // SCK, MISO, MOSI, CS  
+    SPI.setFrequency(1000000); // Slow SPI to 1MHz for stability
+
+    Serial.println("Initializing CAN bus...");
+
+    // MCP_8MHZ = 8MHz crystal  
+    while (CAN_OK != CAN.begin(MCP_ANY, CAN_500KBPS, MCP_8MHZ)) {  
+        Serial.println("CAN init failed. Retrying...");  
+        delay(500);  
+    }
+
+    CAN.setMode(MCP_NORMAL);  
+    Serial.println("CAN init OK! Crystal: 8MHz | Baud: 500KBPS");  
+}
+
+void loop() {  
+    // OBD2 Request: Engine RPM (PID 0x0C)  
+    unsigned char requestData[8] = {0x02, 0x01, 0x0C, 0x00, 0x00, 0x00, 0x00, 0x00};
+
+    if (CAN.sendMsgBuf(0x7DF, 0, 8, requestData) == CAN_OK) {
+
+        // Wait for ECU response with timeout  
+        unsigned long startTime = millis();  
+        while (millis() - startTime < 200) {
+
+            if (CAN_MSGAVAIL == CAN.checkReceive()) {  
+                unsigned long rxId;  
+                unsigned char len = 0;  
+                unsigned char rxBuf[8];
+
+                CAN.readMsgBuf(&rxId, &len, rxBuf);
+
+                // Only process OBD2 response IDs (0x7E8 - 0x7EF)  
+                if (rxId >= 0x7E8 && rxId <= 0x7EF) {
+
+                    // Verify correct mode and PID in response  
+                    if (rxBuf[1] == 0x41 && rxBuf[2] == 0x0C) {  
+                        // RPM Formula: ((A * 256) + B) / 4  
+                        unsigned int rpm = ((unsigned int)rxBuf[3] * 256 + rxBuf[4]) / 4;  
+                        Serial.print("Engine RPM: ");  
+                        Serial.println(rpm);  
+                        break; // Exit wait loop after successful read  
+                    }  
+                }  
+            }  
+        }
+
+    } else {  
+        Serial.println("Error: Failed to send RPM request.");  
+    }
+
+    delay(200); // Poll 5 times per second  
+}  
